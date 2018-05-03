@@ -181,6 +181,15 @@ class Evolution:
 	def rmse(self, predictions, targets):
 		return np.sqrt(((predictions - targets) ** 2).mean())
 
+
+	def neuralnet_fit(self, neuralnet, data, w):
+		y = data[:, self.topology[0]]
+
+		fx = neuralnet.evaluate_proposal(data, w)
+		rmse = self.rmse(fx, y)
+
+		return 1/rmse  # inverse as evo alg will maximise a minimization problem
+
 	def likelihood_func(self, neuralnet, data, w, tausq):
 		y = data[:, self.topology[0]]
 		fx = neuralnet.evaluate_proposal(data, w)
@@ -206,10 +215,10 @@ class Evolution:
 
 
 		#max_limits = [2, 2, 2, 2, 2]  # can handle different limits for different variables  ( not really needed for neural networks )
-		self.max_limits = np.repeat(10, self.num_variables)
+		self.max_limits = np.repeat(50, self.num_variables)
 		#min_limits = [0, 0, 0, 0, 0] 
 
-		self.min_limits = np.repeat(-10, self.num_variables)
+		self.min_limits = np.repeat(-50, self.num_variables)
 
 		span = np.subtract(self.max_limits,self.min_limits)/self.max_limits
 
@@ -217,7 +226,7 @@ class Evolution:
 
 
 		for i in range(self.num_variables): # calculate the step size of each of the parameters. just for mutation by random-walk
-			self.stepsize_vec[i] = self.step_ratio  * span[i] 
+			self.stepsize_vec[i] = self.step_ratio  #* span[i] 
 
 	def print_pop(self ):
 
@@ -225,7 +234,7 @@ class Evolution:
  
 
 
-	def fit_func(self, x):    #   these are optimisation problems. for evo-MCMC we will use model_func()
+	'''def fit_func(self, x):    #   these are optimisation problems. for evo-MCMC we will use model_func()
 		fit = 0
 
 		if self.problem == 1: # rosenbrock
@@ -240,19 +249,21 @@ class Evolution:
 			fit = 1e-20 # to be safe with division by 0
 				  
 
-		return 1/fit # note we will maximize fitness, hence minimize error 
+		return 1/fit # note we will maximize fitness, hence minimize error  
+		'''
  
 
-	def evaluate_population(self): 
-
-		self.fit_list[0] = self.fit_func(self.pop[0,:])
+	def evaluate_population(self,  neuralnet, data): 
+		w = self.pop[0,:] 
+		self.fit_list[0] =   self.neuralnet_fit( neuralnet, data, w)
 		self.best_fit = self.fit_list[0]
 		self.best_index = 0
 
 		sum = 0
 
 		for i in range(self.pop_size):
-			self.fit_list[i] = self.fit_func(self.pop[i,:]) 
+			w = self.pop[i,:]
+			self.fit_list[i] = self.neuralnet_fit( neuralnet, data, w)
 			sum = sum + self.fit_list[i]
 
 			if self.best_fit > self.fit_list[i]:
@@ -414,6 +425,10 @@ class Evolution:
 
 		fxtrain_samples = np.ones((samples, trainsize))  # fx of train data over all samples
 		fxtest_samples = np.ones((samples, testsize))  # fx of test data over all samples
+		
+		rmse_train = np.zeros(samples)
+		rmse_test = np.zeros(samples)
+
 		 
 		w = np.random.randn(w_size)
 		w_proposal = np.random.randn(w_size)
@@ -424,12 +439,11 @@ class Evolution:
 		neuralnet = Network(self.topology, self.traindata, self.testdata)
 		 
 		pred_train = neuralnet.evaluate_proposal(self.traindata, w)
-		pred_test = neuralnet.evaluate_proposal(self.testdata, w)
-
+		 
 		eta = np.log(np.var(pred_train - self.traindata[:, netw[0]]))
-		tau_pro = np.exp(eta)
+		tau_pro = np.exp(eta) # initial 
 
-		sigma_squared = 25
+		sigma_squared = 25 # detemined by limits in weight space
 		nu_1 = 0
 		nu_2 = 0
 
@@ -440,16 +454,7 @@ class Evolution:
 
 		print likelihood
 
-
-
-		#pos_x = np.zeros((self.max_evals, self.num_variables)) # posterior of your variables 
-
-
-		#pos_tau = np.ones((self.max_evals,  1)) # used for data driven models that consider adding noise to the predictions
-
-		#fx_samples = np.ones((self.max_evals, ydata.size)) # predictions over samples (evolution)
-
-
+ 
 
 
 		self.initialize()
@@ -459,13 +464,19 @@ class Evolution:
 		global_bestindex = 0
 
 		naccept = 0 # number of samples accepted
+
+		i =0
  
 
-		while(self.num_eval< self.max_evals):
+		while(i< self.max_evals-1):
 
-			self.evaluate_population()  
+
+
+			# --------------------------------------------------------------- This is evolutionary phase
+
+			self.evaluate_population( neuralnet, self.traindata)  
  
-			for p in range(0,  self.pop_size, 2):
+			for p in range(0,  self.pop_size , 2):
  
 				leftpair =  self.roullete_wheel() #np.random.randint(self.pop_size) 
 				rightpair = self.roullete_wheel()  # np.random.randint(self.pop_size)  
@@ -492,20 +503,26 @@ class Evolution:
 
 			self.pop[0,:] = global_best # ensure that you retain the best 
 
-			print(best, ' is best so far')
-			print(self.pop, ' self.pop')
+			#print(best, ' is best so far')
+			print(self.num_eval, 1/self.best_fit, ' is local best fit')
+			print(self.num_eval, 1/global_bestfit, ' is global best fit')
+			#print(self.pop, ' self.pop')
+			#print(self.fit_list, ' self.fit_list')
+
 
   
  
-			if  (1/self.best_fit) < self.min_error:
-				print(' reached min error')
-				break 
+			#if  (1/self.best_fit) < self.min_error:
+				#print(' reached min error')
+				#break 
 
 				# after evolution of the population, accept or reject each population member by MH criteria  -----------------------------------------------
 
-			k = 0
+			#k = 0
 
-			for i in range(self.num_eval, self.pop_size + self.num_eval):
+			#for i in range(self.num_eval  , (self.pop_size + self.num_eval  )   ):
+			for k in range(0  ,   self.pop_size     ):
+
 
 
 
@@ -514,21 +531,19 @@ class Evolution:
 				tau_pro = math.exp(eta_pro)
 
 				w_proposal = self.pop[k,:]
+				#print w_proposal, ' w_proposal'
 
-				k = k +1 
+ 
 
-				print(k, w_proposal, ' i w_proposal')
+				[likelihood_proposal, pred_train, rmsetrain] = self.likelihood_func(neuralnet, self.traindata, w_proposal,tau_pro)
+				[likelihood_ignore, pred_test, rmsetest] = self.likelihood_func(neuralnet, self.testdata, w_proposal,tau_pro)
 
-				[likelihood_proposal, pred_train, rmsetrain] = self.likelihood_func(neuralnet, self.traindata, w_proposal,
-																				tau_pro)
-				[likelihood_ignore, pred_test, rmsetest] = self.likelihood_func(neuralnet, self.testdata, w_proposal,
-																			tau_pro)
+				#print  likelihood_proposal,  rmsetrain, rmsetest,  ' ------------------- '
 
-				print(i, rmsetrain, rmsetest,  '   i rmsetrain rmsetest ****     ')
+				#print(i, k,    self.num_eval, rmsetrain, rmsetest,  '   i rmsetrain rmsetest ****     ')
 
 
-				prior_prop = self.prior_likelihood(sigma_squared, nu_1, nu_2, w_proposal,
-											   tau_pro)  # takes care of the gradients
+				prior_prop = self.prior_likelihood(sigma_squared, nu_1, nu_2, w_proposal, tau_pro)  # takes care of the gradients
 
 				diff_likelihood = likelihood_proposal - likelihood
 				diff_priorliklihood = prior_prop - prior_likelihood
@@ -537,30 +552,50 @@ class Evolution:
 
 				u = random.uniform(0, 1)
 
+
+				#k = k +1
+
+
 				if u < mh_prob:
-				# Update position
-					print    i, ' is accepted sample'
+				# Update position 
 					naccept += 1
 					likelihood = likelihood_proposal
 					prior_likelihood = prior_prop
 					w = w_proposal
 					eta = eta_pro
 
-					print  likelihood, prior_likelihood, rmsetrain, rmsetest, w, 'accepted'
+					print  naccept, i,    likelihood, prior_likelihood, rmsetrain, rmsetest,  'accepted'
 
-					pos_w[i + 1,] = w_proposal
-					pos_tau[i + 1,] = tau_pro
-					fxtrain_samples[i + 1,] = pred_train
+					pos_w[i + 1,] = w_proposal # weights 
+					pos_tau[i + 1,] = tau_pro  # noise in predictions 
+					fxtrain_samples[i + 1,] = pred_train # predictions
 					fxtest_samples[i + 1,] = pred_test
-					 
-					plt.plot(x_train, pred_train)
+					rmse_train[i + 1,] = rmsetrain
+					rmse_test[i + 1,] = rmsetest
+					  
 
 
 				else:
-					pos_w[i + 1,] = pos_w[i,]
-					pos_tau[i + 1,] = pos_tau[i,]
-					fxtrain_samples[i + 1,] = fxtrain_samples[i,]
+					#print  naccept, i, i+1,  likelihood, prior_likelihood, rmsetrain, rmsetest,  ' NOT accepted'
+
+					pos_w[i + 1,] = pos_w[i,] # weights 
+					pos_tau[i + 1,] = pos_tau[i,] # noise in predictions 
+					fxtrain_samples[i + 1,] = fxtrain_samples[i,] # predictions
 					fxtest_samples[i + 1,] = fxtest_samples[i,]
+					rmse_train[i + 1,] = rmse_train[i,]
+					rmse_test[i + 1,] = rmse_test[i,]
+
+
+				
+
+				i = i +1  
+				if i == self.max_evals -1: 
+					break
+
+
+		print naccept, ' n accepted                    ******  '
+
+		accept_per= naccept/(self.max_evals *1.0) * 100
 					 
 
 
@@ -570,7 +605,7 @@ class Evolution:
 
   
 
-		return  global_best, 1/global_bestfit, pos_x, self.fit_list
+		return  global_best, 1/global_bestfit, pos_w, pos_tau, fxtrain_samples, fxtest_samples, accept_per, np.asarray(rmse_train), np.asarray(rmse_test)
 
  
 
@@ -591,9 +626,9 @@ def main():
 	min_fitness = 0.005  # stop when fitness reaches this value. not implemented - can be implemented later
 
 
-	max_evals = 10000  # need to decide yourself - function evaluations 
+	max_evals = 50  # need to decide yourself - function evaluations 
 
-	pop_size = 50  # to be adjusted for the problem 
+	pop_size = 10  # to be adjusted for the problem 
 
 	xover_rate = 0.8 # ideal, but you can adjust further 
 	mu_rate = 0.1
@@ -604,7 +639,7 @@ def main():
 
 	prob = 1 # 1 is rosenbrock, 2 is ellipsoidal
 
-	num_experiments = 3 # number of experiments with diffirent initial population
+	num_experiments = 1 # number of experiments with diffirent initial population
 
 	num_problem = 1 # number of problems in total
 
@@ -627,10 +662,10 @@ def main():
 
 	for problem in range(num_problem): 
  
-		if problem == 0:
+		if problem == 1:
 			traindata = np.loadtxt("Data_OneStepAhead/Lazer/train.txt")
 			testdata = np.loadtxt("Data_OneStepAhead/Lazer/test.txt")  #
-		elif problem == 1:
+		elif problem == 0:
 			traindata = np.loadtxt("Data_OneStepAhead/Sunspot/train.txt")
 			testdata = np.loadtxt("Data_OneStepAhead/Sunspot/test.txt")  #
 		elif problem == 2:
@@ -644,32 +679,100 @@ def main():
 
 			evo = Evolution(prob, pop_size,   max_evals,   xover_rate, mu_rate, min_fitness, choose_xover, topology, traindata, testdata)
  
-			global_best, global_bestfit, posterior, pred_list = evo.evo_MCMC()
+			global_best, global_bestfit, pos_w, pos_tau, fx_train, fx_test, per_accept, rmse_train, rmse_test = evo.evo_MCMC()
 			#np.savetxt(file_solution, np.transpose([i,j, global_bestfit, best_fit]), fmt='%1.1f')
 			#np.savetxt(file_solution, np.transpose(global_best) , fmt='%1.4f') 
-			#np.savetxt(file_solution, np.transpose(best) , fmt='%1.4f')
+			#np.savetxt(file_solution, np.transpose(best) , fmt='%1.4f') 
+
 
 			global_fit[j] = global_bestfit 
 
-			print(j, best_fit, global_bestfit, ' best and global best fit')
+			print(j,  global_bestfit, ' best and global best fit')
 
-			print(j, best, global_best, ' best and global best sol')
+			print(j,   global_best, ' best and global best sol')
+
+			print(j, per_accept , ' is percentage accepted')
+
+			burnin = int(0.1 * max_evals)  # use post burn in samples
+
+			pos_w = pos_w[int(burnin):, ]
+			pos_tau = pos_tau[int(burnin):, ]
+
+			fx_mu = fx_test.mean(axis=0)
+			fx_high = np.percentile(fx_test, 95, axis=0)
+			fx_low = np.percentile(fx_test, 5, axis=0)
+
+			fx_mu_tr = fx_train.mean(axis=0)
+			fx_high_tr = np.percentile(fx_train, 95, axis=0)
+			fx_low_tr = np.percentile(fx_train, 5, axis=0)
+
+			print(rmse_train )
+
+			rmse_tr = np.mean(rmse_train[int(burnin):])
+			rmsetr_std = np.std(rmse_train[int(burnin):])
+			rmse_test = np.mean(rmse_test[int(burnin):])
+			rmsetest_std = np.std(rmse_test[int(burnin):])
+
+			print rmse_tr, rmsetr_std, rmse_test, rmsetest_std, '  rmse_tr, rmsetr_std, rmse_test, rmsetest_std '
+			np.savetxt(file, (rmse_tr, rmsetr_std, rmse_test, rmsetest_std, per_accept), fmt='%1.5f')
 
 
 
 			# for plotting
-		x_test = np.linspace(0, 1, num=testdata.shape[0])
-		x_train = np.linspace(0, 1, num=traindata.shape[0]) 
-		#y_test =  testdata[:, netw[0]]
-		#y_train = traindata[:, netw[0]] 
+			x_test = np.linspace(0, 1, num=testdata.shape[0])
+			x_train = np.linspace(0, 1, num=traindata.shape[0])  
+
+			ytestdata = testdata[:, input]
+			ytraindata = traindata[:, input]
+
+			plt.plot(x_test, ytestdata, label='actual')
+			plt.plot(x_test, fx_mu, label='pred. (mean)')
+			plt.plot(x_test, fx_low, label='pred.(5th percen.)')
+			plt.plot(x_test, fx_high, label='pred.(95th percen.)')
+			plt.fill_between(x_test, fx_low, fx_high, facecolor='g', alpha=0.4)
+			plt.legend(loc='upper right')
+
+			plt.title("Plot of Test Data vs MCMC Uncertainty ")
+			plt.savefig('mcmcresults/mcmcrestest.png')
+			plt.savefig('mcmcresults/mcmcrestest.svg', format='svg', dpi=600)
+			plt.clf()
+		# -----------------------------------------
+			plt.plot(x_train, ytraindata, label='actual')
+			plt.plot(x_train, fx_mu_tr, label='pred. (mean)')
+			plt.plot(x_train, fx_low_tr, label='pred.(5th percen.)')
+			plt.plot(x_train, fx_high_tr, label='pred.(95th percen.)')
+			plt.fill_between(x_train, fx_low_tr, fx_high_tr, facecolor='g', alpha=0.4)
+			plt.legend(loc='upper right')
+
+			plt.title("Plot of Train Data vs MCMC Uncertainty ")
+			plt.savefig('mcmcresults/mcmcrestrain.png')
+			plt.savefig('mcmcresults/mcmcrestrain.svg', format='svg', dpi=600)
+			plt.clf()
+
+			mpl_fig = plt.figure()
+			ax = mpl_fig.add_subplot(111)
+
+			ax.boxplot(pos_w)
+
+			ax.set_xlabel('[W1] [B1] [W2] [B2]')
+			ax.set_ylabel('Posterior')
+
+			plt.legend(loc='upper right')
+
+			plt.title("Boxplot of Posterior W (weights and biases)")
+			plt.savefig('mcmcresults/w_pos.png')
+			plt.savefig('mcmcresults/w_pos.svg', format='svg', dpi=600)
+
+			plt.clf()
 
 
 
-		print(global_fit, '    global bestfit')  
-		print(i, np.mean(global_fit), '  mean  global bestfit') 
+
+		#print(global_fit, '    global bestfit')  
+		#print(i, np.mean(global_fit), '  mean  global bestfit') 
 		#np.savetxt(file, global_fit)
  
-		np.savetxt(file, [i,np.mean(global_fit) ], fmt='%1.2f')
+		#np.savetxt(file, [problem,np.mean(global_fit) ], fmt='%1.2f')
  
 
 
