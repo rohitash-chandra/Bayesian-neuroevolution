@@ -405,6 +405,55 @@ class Evolution:
 		return child_one, child_two
 
 
+
+	def view_posterior(self, list, title  ): 
+
+		list_points =  list
+ 
+		width = 9 
+
+		font = 9
+
+		fig = plt.figure(figsize=(10, 12))
+		ax = fig.add_subplot(111) 
+		slen = np.arange(0,len(list),1) 
+		 
+		fig = plt.figure(figsize=(10,12))
+		ax = fig.add_subplot(111)
+		ax.spines['top'].set_color('none')
+		ax.spines['bottom'].set_color('none')
+		ax.spines['left'].set_color('none')
+		ax.spines['right'].set_color('none')
+		ax.tick_params(labelcolor='w', top='off', bottom='off', left='off', right='off')
+		ax.set_title(' Posterior distribution', fontsize=  font+2)#, y=1.02)
+	
+		ax1 = fig.add_subplot(211) 
+
+		n, rainbins, patches = ax1.hist(list_points,  bins = 20,  alpha=0.5, facecolor='sandybrown', normed=False)	
+ 
+    
+
+		ax1.grid(True)
+		ax1.set_ylabel('Frequency',size= font+1)
+		ax1.set_xlabel('Parameter values', size= font+1)
+	
+		ax2 = fig.add_subplot(212) 
+
+		ax2.set_facecolor('#f2f2f3') 
+		ax2.plot( list_points.T , label=None)
+		ax2.set_title(r'Trace plot',size= font+2)
+		ax2.set_xlabel('Samples',size= font+1)
+		ax2.set_ylabel('Parameter values', size= font+1) 
+
+		fig.tight_layout()
+		fig.subplots_adjust(top=0.88)
+		 
+ 
+		plt.savefig('results/posterior/' + title  + '_pos_.png', bbox_inches='tight', dpi=300, transparent=False)
+		plt.clf() 
+
+
+
 	def evo_MCMC(self):
 
 		samples = self.max_evals # max number of samples or function evals 
@@ -596,6 +645,10 @@ class Evolution:
 		print naccept, ' n accepted                    ******  '
 
 		accept_per= naccept/(self.max_evals *1.0) * 100
+
+
+		for s in range(w_size):  
+			self.view_posterior(pos_w[s,:], 'pos_w_'+str(s)  ) 
 					 
 
 
@@ -605,16 +658,19 @@ class Evolution:
 
   
 
-		return  global_best, 1/global_bestfit, pos_w, pos_tau, fxtrain_samples, fxtest_samples, accept_per, np.asarray(rmse_train), np.asarray(rmse_test)
+		return  global_best, 1/global_bestfit, pos_w, pos_tau, fxtrain_samples, fxtest_samples, accept_per, rmse_train,  rmse_test
+
 
  
 
 def main():
 
 
-	file=open('results_fitness.txt','a')
 
-	file_solution=open('results_solution.txt','a')
+
+	file=open('results/results_fitness.txt','a')
+
+	file_solution=open('results/results_solution.txt','a')
 
 	#-------- set up neural network training data and topology
 
@@ -626,7 +682,7 @@ def main():
 	min_fitness = 0.005  # stop when fitness reaches this value. not implemented - can be implemented later
 
 
-	max_evals = 50  # need to decide yourself - function evaluations 
+	max_evals = 5000  # need to decide yourself - function evaluations 
 
 	pop_size = 10  # to be adjusted for the problem 
 
@@ -709,12 +765,15 @@ def main():
 			print(rmse_train )
 
 			rmse_tr = np.mean(rmse_train[int(burnin):])
+ 
 			rmsetr_std = np.std(rmse_train[int(burnin):])
-			rmse_test = np.mean(rmse_test[int(burnin):])
-			rmsetest_std = np.std(rmse_test[int(burnin):])
+			rmsetest= np.mean(rmse_test[int(burnin):])
+ 
 
-			print rmse_tr, rmsetr_std, rmse_test, rmsetest_std, '  rmse_tr, rmsetr_std, rmse_test, rmsetest_std '
-			np.savetxt(file, (rmse_tr, rmsetr_std, rmse_test, rmsetest_std, per_accept), fmt='%1.5f')
+			rmsetest_std = np.std(rmse_test[int(burnin):])
+ 
+			print rmse_tr, rmsetr_std, rmsetest, rmsetest_std, '  rmse_tr, rmsetr_std, rmse_test, rmsetest_std '
+			np.savetxt(file, [rmse_tr, rmsetr_std, rmsetest, rmsetest_std, per_accept], fmt='%1.5f')
 
 
 
@@ -732,9 +791,8 @@ def main():
 			plt.fill_between(x_test, fx_low, fx_high, facecolor='g', alpha=0.4)
 			plt.legend(loc='upper right')
 
-			plt.title("Plot of Test Data vs MCMC Uncertainty ")
-			plt.savefig('mcmcresults/mcmcrestest.png')
-			plt.savefig('mcmcresults/mcmcrestest.svg', format='svg', dpi=600)
+			plt.title("Plot of Test Prediction with Uncertainty ")
+			plt.savefig('results/test.png') 
 			plt.clf()
 		# -----------------------------------------
 			plt.plot(x_train, ytraindata, label='actual')
@@ -744,9 +802,8 @@ def main():
 			plt.fill_between(x_train, fx_low_tr, fx_high_tr, facecolor='g', alpha=0.4)
 			plt.legend(loc='upper right')
 
-			plt.title("Plot of Train Data vs MCMC Uncertainty ")
-			plt.savefig('mcmcresults/mcmcrestrain.png')
-			plt.savefig('mcmcresults/mcmcrestrain.svg', format='svg', dpi=600)
+			plt.title("Plot of Train Prediction with Uncertainty")
+			plt.savefig('results/train.png') 
 			plt.clf()
 
 			mpl_fig = plt.figure()
@@ -760,8 +817,7 @@ def main():
 			plt.legend(loc='upper right')
 
 			plt.title("Boxplot of Posterior W (weights and biases)")
-			plt.savefig('mcmcresults/w_pos.png')
-			plt.savefig('mcmcresults/w_pos.svg', format='svg', dpi=600)
+			plt.savefig('results/w_pos.png') 
 
 			plt.clf()
 
