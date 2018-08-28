@@ -111,32 +111,35 @@ class Network(object):
         return self.calculate_rmse(fx, y)
 
 class G3PCX(object):
-    def __init__(self, pop_size, num_variables, max_limits, min_limits, fitness_function, max_evals=500000):
-        self.EPSILON = 1e-40  # convergence
-        self.sigma_eta = 0.1
-        self.sigma_zeta = 0.1
-        self.children = 2
-        self.num_parents = 3
-        self.family = 2
+    def __init__(self, population_size, num_variables, max_limits, min_limits, fitness_function, max_evals=500000):
         self.sp_size = self.children + self.family
-        self.population = np.random.randn( pop_size  , num_variables) * 5  #[SpeciesPopulation(num_variables) for count in xrange(pop_size)]
-        self.sub_pop = np.random.randn( self.sp_size , num_variables ) * 5  #[SpeciesPopulation(num_variables) for count in xrange(NPSize)]
-        self.fitness = np.random.randn( pop_size)
-        self.sp_fit  = np.random.randn(self.sp_size)
+        self.population = np.random.uniform(min_limits[0], max_limits[0], size=(population_size, num_variables))  #[SpeciesPopulation(num_variables) for count in xrange(population_size)]
+        self.sub_pop = np.random.uniform(min_limits[0], max_limits[0], size=(self.sp_size, num_variables))  #[SpeciesPopulation(num_variables) for count in xrange(NPSize)]
+        self.fitness = np.random.zeros(population_size)
+        self.sp_fit  = np.random.zeros(self.sp_size)
         self.best_index = 0
         self.best_fit = 0
         self.worst_index = 0
         self.worst_fit = 0
         self.rand_parents =  self.num_parents
-        self.temp_index =  np.arange(0, pop_size)
-        self.rank =  np.arange(0, pop_size)
+        self.temp_index =  np.arange(0, population_size)
+        self.rank =  np.arange(0, population_size)
         self.list = np.arange(0, self.sp_size)
-        self.parents = np.arange(0, pop_size)
-        self.pop_size = pop_size
+        self.parents = np.arange(0, population_size)
+        self.population_size = population_size
         self.num_variables = num_variables
         self.num_evals = 0
         self.max_evals = max_evals
         self.fitness_function = fitness_function
+        self.initialize_parameters()
+
+    def initialize_parameters(self):
+        self.epsilon = 1e-40  # convergence
+        self.sigma_eta = 0.1
+        self.sigma_zeta = 0.1
+        self.children = 2
+        self.num_parents = 3
+        self.family = 2
 
     def rand_normal(self, mean, stddev):
         if (not G3PCX.n2_cached):
@@ -163,7 +166,7 @@ class G3PCX(object):
     def evaluate(self):
         self.fitness[0] = self.fitness_function(self.population[0,:])
         self.best_fit = self.fitness[0]
-        for i in range(self.pop_size):
+        for i in range(self.population_size):
             self.fitness[i] = self.fitness_function(self.population[i,:])
             if (self.best_fit> self.fitness[i]):
                 self.best_fit =  self.fitness[i]
@@ -197,11 +200,11 @@ class G3PCX(object):
                 if j == 1:
                     d[i]= centroid[i]  - self.population[self.temp_index[0],i]
                 diff[j, i] = self.population[self.temp_index[j], i] - self.population[self.temp_index[0],i]
-            if (self.mod(diff[j,:]) < self.EPSILON):
+            if (self.mod(diff[j,:]) < self.epsilon):
                 print 'Points are very close to each other. Quitting this run'
                 return 0
         dist = self.mod(d)
-        if (dist < self.EPSILON):
+        if (dist < self.epsilon):
             print " Error -  points are very close to each other. Quitting this run   "
             return 0
         # orthogonal directions are computed
@@ -241,7 +244,7 @@ class G3PCX(object):
     def inner(self, ind1, ind2):
         sum = 0.0
         for i in range(self.num_variables):
-            sum += (ind1[i] * ind2[i] )
+            sum += (ind1[i] * ind2[i])
         return  sum
 
     def sort_population(self):
@@ -266,12 +269,12 @@ class G3PCX(object):
 
     def family_members(self): #//here a random family (1 or 2) of parents is created who would be replaced by good individuals
         swp = 0
-        for i in range(self.pop_size):
+        for i in range(self.population_size):
             self.parents[i] = i
         for i in range(self.family):
-            randomIndex = random.randint(0, self.pop_size - 1) + i # Get random index in population
-            if randomIndex > (self.pop_size-1):
-                randomIndex = self.pop_size-1
+            randomIndex = random.randint(0, self.population_size - 1) + i # Get random index in population
+            if randomIndex > (self.population_size-1):
+                randomIndex = self.population_size-1
             swp = self.parents[randomIndex]
             self.parents[randomIndex] = self.parents[i]
             self.parents[i] = swp
@@ -285,7 +288,7 @@ class G3PCX(object):
             self.num_evals += 1
 
     def random_parents(self ):
-        for i in range(self.pop_size):
+        for i in range(self.population_size):
             self.temp_index[i] = i
         swp=self.temp_index[0]
         self.temp_index[0]=self.temp_index[self.best_index]
@@ -293,9 +296,9 @@ class G3PCX(object):
         # best is always included as a parent and is the index parent
         # this can be changed for solving a generic problem
         for i in range(1, self.rand_parents):
-            index= np.random.randint(self.pop_size)+i
-            if index > (self.pop_size-1):
-                index = self.pop_size-1
+            index= np.random.randint(self.population_size)+i
+            if index > (self.population_size-1):
+                index = self.population_size-1
             swp=self.temp_index[index]
             self.temp_index[index]=self.temp_index[i]
             self.temp_index[i]=swp
@@ -323,7 +326,7 @@ class G3PCX(object):
             self.replace_parents()
             self.best_index = 0
             tempfit = self.fitness[0]
-            for x in range(1, self.pop_size):
+            for x in range(1, self.population_size):
                 if(self.fitness[x] < tempfit):
                     self.best_index = x
                     tempfit  =  self.fitness[x]
@@ -344,13 +347,13 @@ class MCMC(object, G3PCX):
         self.test_data = test_data
         self.problem_type = problem_type
         self.directory = directory
-        self.wsize = (topology[0] * topology[1]) + (topology[1] * topology[2]) + topology[1] + topology[2]
+        self.w_size = (topology[0] * topology[1]) + (topology[1] * topology[2]) + topology[1] + topology[2]
         self.neural_network = Network(topology, train_data, test_data)
-        self.min_limits = np.repeat(min_limit, self.wsize)
-        self.max_limits = np.repeat(max_limit, self.wsize)
+        self.min_limits = np.repeat(min_limit, self.w_size)
+        self.max_limits = np.repeat(max_limit, self.w_size)
         self.initialize_sampling_parameters()
         self.create_directory(directory)
-        G3PCX.__init__(self, population_size, self.wsize, min_fitness, max_limits, min_limits)
+        G3PCX.__init__(self, population_size, self.wsize, max_limits, min_limits, Network.evaluate_fitness)
 
     def initialize_sampling_parameters(self):
         self.sigma_squared = 25
@@ -433,3 +436,83 @@ class MCMC(object, G3PCX):
         elif self.problem_type == 'classification':
             loss = self.classification_prior(self.sigma_squared, weights)
         return loss
+
+    def mcmc_sampler(self, save_knowledge=True):
+        train_rmse_file = open(self.directory+'/train_rmse.csv', 'w')
+        test_rmse_file = open(self.directory+'/test_rmse.csv', 'w')
+        weights_initial = np.random.uniform(-5, 5, self.w_size)
+
+        # ------------------- initialize MCMC
+        self.start_time = time.time()
+
+        train_size = self.train_data.shape[0]
+        test_size = self.test_data.shape[0]
+        y_test = self.test_data[:, self.topology[0]: self.topology[0] + self.topology[2]]
+        y_train = self.train_data[:, self.topology[0]: self.topology[0] + self.topology[2]]
+        weights_current = weights_initial.copy()
+        weights_proposal = weights_initial.copy()
+        prediction_train = self.neural_network.generate_output(self.train_data, weights_current)
+        prediction_test = self.neural_network.generate_output(self.test_data, weights_current)
+        eta = np.log(np.var(prediction_train - y_train))
+        tau_proposal = np.exp(eta)
+        prior = self.prior_function(weights_current, tau_proposal)
+        [likelihood, rmse_train] = self.likelihood_function(self.neural_network, self.train_data, weights_current, tau_proposal)
+        rmse_test = self.calculate_rmse(prediction_test, y_test)
+
+        # save values into previous variables
+        rmse_train_current = rmse_train
+        rmse_test_current = rmse_test
+        num_accept = 0
+
+        tempfit = 0
+        self.evaluate()
+        tempfit = self.fitness[self.best_index]
+
+        # start sampling
+        for sample in range(self.num_samples - 1):
+            tempfit = self.best_fit
+            self.random_parents()
+            for i in range(self.children):
+                tag = self.parent_centric_xover(i)
+                if (tag == 0):
+                    break
+            if tag == 0:
+                break
+            self.find_parents()
+            self.sort_population()
+            self.replace_parents()
+            self.best_index = 0
+            tempfit = self.fitness[0]
+            for x in range(1, self.population_size):
+                if(self.fitness[x] < tempfit):
+                    self.best_index = x
+                    tempfit  =  self.fitness[x]
+            # Evaluate population proposal
+            for index in range(self.population_size):
+                weights_proposal = self.population[index]
+                eta_proposal = eta + np.random.normal(0, self.eta_stepsize, 1)
+                tau_proposal = np.exp(eta_proposal)
+                accept, rmse_train, rmse_test, likelihood, prior = self.evaluate_proposal(self.neural_network, self.train_data, self.test_data, weights_proposal, tau_proposal, likelihood, prior)
+
+                if accept:
+                    num_accept += 1
+                    weights_current = weights_proposal
+                    eta = eta_proposal
+                    # save values into previous variables
+                    rmse_train_current = rmse_train
+                    rmse_test_current = rmse_test
+
+                if save_knowledge:
+                    np.savetxt(train_rmse_file, [rmse_train_current])
+                    np.savetxt(test_rmse_file, [rmse_test_current])
+                    weights_saved[self.num_sources + 1] = weights_current[weight_index]
+
+                elapsed_time = BayesianTL.convert_time(time.time() - self.start)
+
+        elapsed_time = time.time() - self.start
+
+        # Close the files
+        train_rmse_file.close()
+        test_rmse_file.close()
+
+        return (accept_ratio, accept_ratio_target)
