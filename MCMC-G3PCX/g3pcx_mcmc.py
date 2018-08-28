@@ -1,4 +1,5 @@
 # !/usr/bin/python
+from __future__ import division
 import matplotlib.pyplot as plt
 import numpy as np
 import random
@@ -520,38 +521,39 @@ class MCMC(G3PCX):
                     self.best_index = x
                     tempfit  =  self.fitness[x]
             # Evaluate population proposal
-            for index in range(self.population_size):
-                weights_proposal = self.population[index]
-                eta_proposal = eta + np.random.normal(0, self.eta_stepsize, 1)
-                tau_proposal = np.exp(eta_proposal)
-                accept, rmse_train, rmse_test, likelihood, prior = self.evaluate_proposal(self.neural_network, self.train_data, self.test_data, weights_proposal, tau_proposal, likelihood, prior)
+            # for index in range(self.population_size):
+            weights_proposal = self.population[self.best_index]
+            eta_proposal = eta + np.random.normal(0, self.eta_stepsize, 1)
+            tau_proposal = np.exp(eta_proposal)
+            accept, rmse_train, rmse_test, likelihood, prior = self.evaluate_proposal(self.neural_network, self.train_data, self.test_data, weights_proposal, tau_proposal, likelihood, prior)
 
-                if accept:
-                    num_accept += 1
-                    weights_current = weights_proposal
-                    eta = eta_proposal
-                    # save values into previous variables
-                    rmse_train_current = rmse_train
-                    rmse_test_current = rmse_test
+            if accept:
+                num_accept += 1
+                weights_current = weights_proposal
+                eta = eta_proposal
+                # save values into previous variables
+                rmse_train_current = rmse_train
+                rmse_test_current = rmse_test
 
-                if save_knowledge:
-                    np.savetxt(train_rmse_file, [rmse_train_current])
-                    np.savetxt(test_rmse_file, [rmse_test_current])
+            if save_knowledge:
+                np.savetxt(train_rmse_file, [rmse_train_current])
+                np.savetxt(test_rmse_file, [rmse_test_current])
 
-                elapsed_time = MCMC.convert_time(time.time() - self.start)
+            elapsed_time = ":".join(MCMC.convert_time(time.time() - self.start))
 
-            print("Sample: {}, Best Fitness: {}".format(sample, rmse_train_current))
+            print("Sample: {}, Best Fitness: {}, Proposal: {}, Time Elapsed: {}".format(sample, rmse_train_current, rmse_train, elapsed_time))
 
         elapsed_time = time.time() - self.start
+        accept_ratio = num_accept/num_samples
 
         # Close the files
         train_rmse_file.close()
         test_rmse_file.close()
 
-        return (accept_ratio, accept_ratio_target)
+        return accept_ratio
 
 if __name__ == '__main__':
-    num_samples = 8000
+    num_samples = 10000
     population_size = 100
     problem_type = 'regression'
     topology = [4, 25, 1]
@@ -564,5 +566,5 @@ if __name__ == '__main__':
     test_data = np.genfromtxt(test_data_file, delimiter=',')
 
     model = MCMC(num_samples, population_size, topology, train_data, test_data, directory=problem_name)
-    model.mcmc_sampler()
-    # model.evolve('out.txt')
+    accept_ratio = model.mcmc_sampler()
+    print("accept ratio: {}".format(accept_ratio))
