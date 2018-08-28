@@ -5,6 +5,8 @@ import random
 import time
 import math
 import random
+import os
+
 
 # --------------------------------------------- Basic Neural Network Class ---------------------------------------------
 
@@ -111,12 +113,13 @@ class Network(object):
         return self.calculate_rmse(fx, y)
 
 class G3PCX(object):
-    def __init__(self, population_size, num_variables, max_limits, min_limits, fitness_function, max_evals=500000):
+    def __init__(self, population_size, num_variables, max_limits, min_limits, max_evals=500000):
+        self.initialize_parameters()
         self.sp_size = self.children + self.family
         self.population = np.random.uniform(min_limits[0], max_limits[0], size=(population_size, num_variables))  #[SpeciesPopulation(num_variables) for count in xrange(population_size)]
         self.sub_pop = np.random.uniform(min_limits[0], max_limits[0], size=(self.sp_size, num_variables))  #[SpeciesPopulation(num_variables) for count in xrange(NPSize)]
-        self.fitness = np.random.zeros(population_size)
-        self.sp_fit  = np.random.zeros(self.sp_size)
+        self.fitness = np.zeros(population_size)
+        self.sp_fit  = np.zeros(self.sp_size)
         self.best_index = 0
         self.best_fit = 0
         self.worst_index = 0
@@ -130,8 +133,17 @@ class G3PCX(object):
         self.num_variables = num_variables
         self.num_evals = 0
         self.max_evals = max_evals
-        self.fitness_function = fitness_function
-        self.initialize_parameters()
+        self.problem = 1
+
+    def fitness_function(self, x):    #  function  (can be any other function, model or even a neural network)
+		fit = 0.0
+		if self.problem == 1: # rosenbrock
+			for j in range(x.size -1):
+				fit += (100.0*(x[j]*x[j] - x[j+1])*(x[j]*x[j] - x[j+1]) + (x[j]-1.0)*(x[j]-1.0))
+		elif self.problem ==2:  # ellipsoidal - sphere function
+			for j in range(x.size):
+				fit = fit + ((j+1)*(x[j]*x[j]))
+		return fit # note we will maximize fitness, hence minimize error
 
     def initialize_parameters(self):
         self.epsilon = 1e-40  # convergence
@@ -304,10 +316,6 @@ class G3PCX(object):
             self.temp_index[i]=swp
 
     def evolve(self, outfile):
-        pop = np.loadtxt("pop.txt" )
-        genIndex = np.loadtxt("out3.txt" )
-        mom = np.loadtxt("out2.txt" )
-        self.population = pop
         tempfit = 0
         prevfitness = 99
         self.evaluate()
@@ -331,7 +339,7 @@ class G3PCX(object):
                     self.best_index = x
                     tempfit  =  self.fitness[x]
             if self.num_evals % 197 == 0:
-                print self.population[self.best_index]
+                print self.fitness[self.best_index]
                 print self.num_evals, 'num of evals\n\n\n'
             np.savetxt(outfile, [ self.num_evals, self.best_index, self.best_fit], fmt='%1.5f', newline="\n")
         print self.sub_pop, '  sub_pop'
@@ -339,8 +347,8 @@ class G3PCX(object):
         print self.fitness[self.best_index], ' fitness'
 
 
-class MCMC(object, G3PCX):
-    def __init__(self, num_samples, population_size, min_fitness, topology, train_data, test_data, directory, problem_type='regression', max_limit=(-5), min_limit=5):
+class MCMC(G3PCX):
+    def __init__(self, num_samples, population_size, topology, train_data, test_data, directory, problem_type='regression', max_limit=(-5), min_limit=5):
         self.num_samples = num_samples
         self.topology = topology
         self.train_data = train_data
@@ -353,9 +361,14 @@ class MCMC(object, G3PCX):
         self.max_limits = np.repeat(max_limit, self.w_size)
         self.initialize_sampling_parameters()
         self.create_directory(directory)
-        G3PCX.__init__(self, population_size, self.wsize, max_limits, min_limits, Network.evaluate_fitness)
+        G3PCX.__init__(self, population_size, self.w_size, self.max_limits, self.min_limits)
+
+    def fitness_function(self, x):
+        fitness = self.neural_network.evaluate_fitness(x)
+        return fitness
 
     def initialize_sampling_parameters(self):
+        self.eta_stepsize = 0.02
         self.sigma_squared = 25
         self.nu_1 = 0
         self.nu_2 = 0
@@ -381,8 +394,12 @@ class MCMC(object, G3PCX):
             os.mkdir(directory)
 
     @staticmethod
+    def calculate_rmse(actual, targets):
+        return np.sqrt((np.square(np.subtract(np.absolute(actual), np.absolute(targets)))).mean())
+
+    @staticmethod
     def multinomial_likelihood(neural_network, data, weights):
-        y = data[:, neural_network.Top[0]: neural_network.top[2]]
+        y = data[:, neural_network.topology[0]: neural_network.top[2]]
         fx = neural_network.generate_output(data, weights)
         rmse = self.calculate_rmse(fx, y) # Can be replaced by calculate_nmse function for reporting NMSE
         probability = neural_network.softmax(fx)
@@ -409,9 +426,9 @@ class MCMC(object, G3PCX):
 
     @staticmethod
     def gaussian_likelihood(neural_network, data, weights, tausq):
-        desired = data[:, neural_network.Top[0]: neural_network.Top[0] + neural_network.Top[2]]
+        desired = data[:, neural_network.topology[0]: neural_network.topology[0] + neural_network.topology[2]]
         prediction = neural_network.generate_output(data, weights)
-        rmse = BayesianTL.calculate_rmse(prediction, desired)
+        rmse = MCMC.calculate_rmse(prediction, desired)
         loss = -0.5 * np.log(2 * np.pi * tausq) - 0.5 * np.square(desired - prediction) / tausq
         return [np.sum(loss), rmse]
 
@@ -421,7 +438,6 @@ class MCMC(object, G3PCX):
         part2 = 1 / (2 * sigma_squared) * (sum(np.square(weights)))
         log_loss = part1 - part2 - (1 + nu_1) * np.log(tausq) - (nu_2 / tausq)
         return log_loss
-
 
     def likelihood_function(self, neural_network, data, weights, tau):
         if self.problem_type == 'regression':
@@ -436,6 +452,22 @@ class MCMC(object, G3PCX):
         elif self.problem_type == 'classification':
             loss = self.classification_prior(self.sigma_squared, weights)
         return loss
+
+    def evaluate_proposal(self, neural_network, train_data, test_data, weights_proposal, tau_proposal, likelihood_current, prior_current):
+        accept = False
+        likelihood_ignore, rmse_test_proposal = self.likelihood_function(neural_network, test_data, weights_proposal, tau_proposal)
+        likelihood_proposal, rmse_train_proposal = self.likelihood_function(neural_network, train_data, weights_proposal, tau_proposal)
+        prior_proposal = self.prior_function(weights_proposal, tau_proposal)
+        difference_likelihood = likelihood_proposal - likelihood_current
+        difference_prior = prior_proposal - prior_current
+        mh_ratio = min(1, np.exp(min(709, difference_likelihood + difference_prior)))
+        u = np.random.uniform(0,1)
+        if u < mh_ratio:
+            accept = True
+            likelihood_current = likelihood_proposal
+            prior_proposal = prior_current
+        return accept, rmse_train_proposal, rmse_test_proposal, likelihood_current, prior_current
+
 
     def mcmc_sampler(self, save_knowledge=True):
         train_rmse_file = open(self.directory+'/train_rmse.csv', 'w')
@@ -505,9 +537,10 @@ class MCMC(object, G3PCX):
                 if save_knowledge:
                     np.savetxt(train_rmse_file, [rmse_train_current])
                     np.savetxt(test_rmse_file, [rmse_test_current])
-                    weights_saved[self.num_sources + 1] = weights_current[weight_index]
 
-                elapsed_time = BayesianTL.convert_time(time.time() - self.start)
+                elapsed_time = MCMC.convert_time(time.time() - self.start)
+
+            print("Sample: {}, Best Fitness: {}".format(sample, rmse_train_current))
 
         elapsed_time = time.time() - self.start
 
@@ -516,3 +549,20 @@ class MCMC(object, G3PCX):
         test_rmse_file.close()
 
         return (accept_ratio, accept_ratio_target)
+
+if __name__ == '__main__':
+    num_samples = 8000
+    population_size = 100
+    problem_type = 'regression'
+    topology = [4, 25, 1]
+    problem_name = 'synthetic'
+
+    train_data_file = 'synthetic_data/target_train.csv'
+    test_data_file = 'synthetic_data/target_test.csv'
+
+    train_data = np.genfromtxt(train_data_file, delimiter=',')
+    test_data = np.genfromtxt(test_data_file, delimiter=',')
+
+    model = MCMC(num_samples, population_size, topology, train_data, test_data, directory=problem_name)
+    model.mcmc_sampler()
+    # model.evolve('out.txt')
