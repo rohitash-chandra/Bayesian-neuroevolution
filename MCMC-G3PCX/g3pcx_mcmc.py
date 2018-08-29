@@ -117,8 +117,10 @@ class G3PCX(object):
     def __init__(self, population_size, num_variables, max_limits, min_limits, max_evals=500000):
         self.initialize_parameters()
         self.sp_size = self.children + self.family
-        self.population = np.random.uniform(min_limits[0], max_limits[0], size=(population_size, num_variables))  #[SpeciesPopulation(num_variables) for count in xrange(population_size)]
-        self.sub_pop = np.random.uniform(min_limits[0], max_limits[0], size=(self.sp_size, num_variables))  #[SpeciesPopulation(num_variables) for count in xrange(NPSize)]
+        self.population = np.random.randn(population_size, num_variables)
+        self.sub_pop = np.random.randn(self.sp_size, num_variables)
+        # self.population = np.random.uniform(min_limits[0], max_limits[0], size=(population_size, num_variables))  #[SpeciesPopulation(num_variables) for count in xrange(population_size)]
+        # self.sub_pop = np.random.uniform(min_limits[0], max_limits[0], size=(self.sp_size, num_variables))  #[SpeciesPopulation(num_variables) for count in xrange(NPSize)]
         self.fitness = np.zeros(population_size)
         self.sp_fit  = np.zeros(self.sp_size)
         self.best_index = 0
@@ -370,7 +372,7 @@ class MCMC(G3PCX):
 
     def initialize_sampling_parameters(self):
         self.eta_stepsize = 0.02
-        self.sigma_squared = 25
+        self.sigma_squared = 36
         self.nu_1 = 0
         self.nu_2 = 0
         self.start = time.time()
@@ -461,8 +463,9 @@ class MCMC(G3PCX):
         prior_proposal = self.prior_function(weights_proposal, tau_proposal)
         difference_likelihood = likelihood_proposal - likelihood_current
         difference_prior = prior_proposal - prior_current
-        mh_ratio = min(1, np.exp(min(709, difference_likelihood + difference_prior)))
+        mh_ratio = min(1, math.exp(min(709, difference_likelihood + difference_prior)))
         u = np.random.uniform(0,1)
+        # print mh_ratio
         if u < mh_ratio:
             accept = True
             likelihood_current = likelihood_proposal
@@ -473,7 +476,7 @@ class MCMC(G3PCX):
     def mcmc_sampler(self, save_knowledge=True):
         train_rmse_file = open(self.directory+'/train_rmse.csv', 'w')
         test_rmse_file = open(self.directory+'/test_rmse.csv', 'w')
-        weights_initial = np.random.uniform(-5, 5, self.w_size)
+        weights_initial = np.random.randn(self.w_size)
 
         # ------------------- initialize MCMC
         self.start_time = time.time()
@@ -541,7 +544,7 @@ class MCMC(G3PCX):
 
             elapsed_time = ":".join(MCMC.convert_time(time.time() - self.start))
 
-            print("Sample: {}, Best Fitness: {}, Proposal: {}, Time Elapsed: {}".format(sample, rmse_train_current, rmse_train, elapsed_time))
+            print "Sample: {}, Current rmse: {}, Proposal rmse: {}".format(sample,rmse_train_current, rmse_train)
 
         elapsed_time = time.time() - self.start
         accept_ratio = num_accept/num_samples
@@ -552,8 +555,37 @@ class MCMC(G3PCX):
 
         return accept_ratio
 
+    def get_rmse(self):
+        self.rmse_train = np.genfromtxt(self.directory+'/train_rmse.csv')
+        self.rmse_test = np.genfromtxt(self.directory+'/test_rmse.csv')
+
+    def display_rmse(self):
+        self.burnin = int(0.1 * self.num_samples)  # use post burn in samples
+        self.get_rmse()
+        rmse_train_mean = np.mean(self.rmse_train[self.burnin:])
+        rmse_train_std = np.std(self.rmse_train[self.burnin:])
+        rmse_test_mean = np.mean(self.rmse_test[self.burnin:])
+        rmse_test_std = np.std(self.rmse_test[self.burnin:])
+
+        print("Train rmse:")
+        print("Mean: " + str(rmse_train_mean) + " Std: " + str(rmse_train_std))
+        print("Test rmse:")
+        print("Mean: " + str(rmse_test_mean) + " Std: " + str(rmse_test_std))
+
+    def plot_rmse(self, dataset):
+        ax = plt.subplot(111)
+        x = np.linspace(0, 1, self.num_samples - self.burnin - 1)
+        plt.plot(x, self.rmse_train[self.burnin: ], '.' , label="train")
+        plt.plot(x, self.rmse_test[self.burnin: ], '.' , label="test")
+        plt.legend()
+        plt.xlabel('Samples')
+        plt.ylabel('RMSE')
+        plt.title(dataset+' Train RMSE')
+        plt.savefig(self.directory+'/rmse.png')
+        plt.clf()
+
 if __name__ == '__main__':
-    num_samples = 10000
+    num_samples = 25000
     population_size = 100
     problem_type = 'regression'
     topology = [4, 25, 1]
@@ -568,3 +600,5 @@ if __name__ == '__main__':
     model = MCMC(num_samples, population_size, topology, train_data, test_data, directory=problem_name)
     accept_ratio = model.mcmc_sampler()
     print("accept ratio: {}".format(accept_ratio))
+    model.display_rmse()
+    model.plot_rmse(problem_name)
